@@ -1,72 +1,55 @@
-"""Configuration loader for pipewatch pipelines."""
+"""Configuration models and loader for pipewatch."""
+from __future__ import annotations
 
 import os
-import yaml
 from dataclasses import dataclass, field
-from typing import List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import yaml
 
 
 @dataclass
 class PipelineConfig:
     name: str
-    schedule: str  # cron expression or interval like '1h', '30m'
-    max_age_minutes: int = 60
-    alert_email: Optional[str] = None
+    cron: str
+    max_stale_minutes: int = 60
     tags: List[str] = field(default_factory=list)
-    enabled: bool = True
+    alert_on_stale: bool = True
+    alert_on_failure: bool = True
 
 
 @dataclass
 class AppConfig:
+    state_dir: str = ".pipewatch"
+    check_interval_seconds: int = 60
     pipelines: List[PipelineConfig] = field(default_factory=list)
-    state_file: str = ".pipewatch_state.json"
-    log_level: str = "INFO"
 
 
-def load_config(path: str = "pipewatch.yml") -> AppConfig:
-    """Load and parse the pipewatch YAML configuration file."""
-    if not os.path.exists(path):
-        raise FileNotFoundError(
-            f"Config file not found: {path}. "
-            "Run `pipewatch init` to create a default config."
-        )
-
-    with open(path, "r") as f:
-        raw = yaml.safe_load(f)
-
-    if raw is None:
-        raise ValueError(f"Config file is empty: {path}")
-
-    pipelines = []
-    for entry in raw.get("pipelines", []):
-        pipelines.append(
-            PipelineConfig(
-                name=entry["name"],
-                schedule=entry["schedule"],
-                max_age_minutes=entry.get("max_age_minutes", 60),
-                alert_email=entry.get("alert_email"),
-                tags=entry.get("tags", []),
-                enabled=entry.get("enabled", True),
-            )
-        )
-
-    return AppConfig(
-        pipelines=pipelines,
-        state_file=raw.get("state_file", ".pipewatch_state.json"),
-        log_level=raw.get("log_level", "INFO"),
+def _parse_pipeline(raw: Dict[str, Any]) -> PipelineConfig:
+    return PipelineConfig(
+        name=raw["name"],
+        cron=raw["cron"],
+        max_stale_minutes=int(raw.get("max_stale_minutes", 60)),
+        tags=list(raw.get("tags") or []),
+        alert_on_stale=bool(raw.get("alert_on_stale", True)),
+        alert_on_failure=bool(raw.get("alert_on_failure", True)),
     )
 
 
-DEFAULT_CONFIG_TEMPLATE = """\
-log_level: INFO
-state_file: .pipewatch_state.json
+def load_config(path: str | os.PathLike = "pipewatch.yaml") -> AppConfig:
+    """Load and parse the YAML configuration file."""
+    config_path = Path(path)
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
 
-pipelines:
-  - name: example_pipeline
-    schedule: "0 * * * *"  # every hour
-    max_age_minutes: 90
-    alert_email: null
-    tags:
-      - etl
-    enabled: true
-"""
+    with config_path.open() as fh:
+        raw: Dict[str, Any] = yaml.safe_load(fh) or {}
+
+    pipelines = [_parse_pipeline(p) for p in raw.get("pipelines", [])]
+
+    return AppConfig(
+        state_dir=raw.get("state_dir", ".pipewatch"),
+        check_interval_seconds=int(raw.get("check_interval_seconds", 60)),
+        pipelines=pipelines,
+    )
