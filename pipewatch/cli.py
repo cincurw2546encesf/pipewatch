@@ -1,4 +1,4 @@
-"""Command-line interface for pipewatch."""
+"""PipeWatch CLI — check pipelines, list status, and generate reports."""
 
 from __future__ import annotations
 
@@ -8,69 +8,70 @@ from typing import Optional
 
 import click
 
-from pipewatch.alerts import AlertConfig, dispatch_alerts
-from pipewatch.checker import CheckStatus, check_all
-from pipewatch.config import load_config
+from pipewatch.checker import check_pipeline
+from pipewatch.config import AppConfig, load_config
+from pipewatch.reporter import ReportFormat, build_report
 from pipewatch.state import StateStore
 
-_STATUS_COLOURS = {
-    CheckStatus.OK: "green",
-    CheckStatus.STALE: "yellow",
-    CheckStatus.FAILED: "red",
-    CheckStatus.MISSING: "magenta",
-}
+DEFAULT_CONFIG = "pipewatch.yaml"
 
 
 @click.group()
-@click.option(
-    "--config",
-    "config_path",
-    default="pipewatch.yaml",
-    show_default=True,
-    help="Path to pipewatch YAML config.",
-)
+@click.option("--config", default=DEFAULT_CONFIG, show_default=True, help="Path to config file.")
 @click.pass_context
-def cli(ctx: click.Context, config_path: str) -> None:
-    """pipewatch — ETL pipeline health monitor."""
+def cli(ctx: click.Context, config: str) -> None:
+    """PipeWatch — ETL pipeline health monitor."""
     ctx.ensure_object(dict)
-    ctx.obj["config_path"] = config_path
+    ctx.obj["config_path"] = config
 
 
-@cli.command("check")
-@click.option("--alert", is_flag=True, default=False, help="Send e-mail alerts for unhealthy pipelines.")
+@cli.command(name="check")
 @click.pass_context
-def check_cmd(ctx: click.Context, alert: bool) -> None:
-    """Run health checks for all configured pipelines."""
-    app_cfg = load_config(ctx.obj["config_path"])
-    store = StateStore(app_cfg.state_path)
-    results = check_all(app_cfg.pipelines, store)
-
-    any_unhealthy = False
-    for result in results:
-        colour = _STATUS_COLOURS.get(result.status, "white")
-        click.echo(click.style(str(result), fg=colour))
-        if result.status != CheckStatus.OK:
-            any_unhealthy = True
-
-    if alert and any_unhealthy:
-        alert_cfg = AlertConfig(
-            smtp_host=app_cfg.smtp_host,
-            smtp_port=app_cfg.smtp_port,
-            from_addr=app_cfg.alert_from,
-            to_addrs=app_cfg.alert_to,
-        )
-        dispatch_alerts(results, alert_cfg)
-
-    sys.exit(1 if any_unhealthy else 0)
+def check_cmd(ctx: click.Context) -> None:
+    """Run health checks on all configured pipelines."""
+    cfg: AppConfig = load_config(ctx.obj["config_path"])
+    store = StateStore(cfg.state_file)
+    results = [check_pipeline(p, store) for p in cfg.pipelines]
+    for r in results:
+        click.echo(str(r))
+    failed = any(r.status.value != "ok" for r in results)
+    sys.exit(1 if failed else 0)
 
 
-@cli.command("list")
+@cli.command(name="list")
 @click.pass_context
 def list_cmd(ctx: click.Context) -> None:
     """List all configured pipelines."""
-    app_cfg = load_config(ctx.obj["config_path"])
-    for pipeline in app_cfg.pipelines:
-        click.echo(f"{pipeline.name}  (max_age={pipeline.max_age_seconds}s)")
+    cfg: AppConfig = load_config(ctx.obj["config_path"])
+    for p in cfg.pipelines:
+        click.echo(
+            f"  {p.name:<28} max_age={p.max_age_minutes}m  "
+            f"on_failure={p.alert_on_failure}"
+        )
+
+
+@cli.command(name="report")
+@click.option(
+    "--format",
+    "fmt",
+    type=click.Choice(["text", "json", "csv"]),
+    default="text",
+    show_default=True,
+    help="Output format.",
+)
+@click.option("--output", "-o", default=None, help="Write report to file instead of stdout.")
+@click.pass_context
+def report_cmd(ctx: click.Context, fmt: ReportFormat, output: Optional[str]) -> None:
+    """Generate a summary report of pipeline health."""
+    cfg: AppConfig = load_config(ctx.obj["config_path"])
+    store = StateStore(cfg.state_file)
+    results = [check_pipeline(p, store) for p in cfg.pipelines]
+    report = build_report(results, fmt=fmt)
+    if output:
+        Path(output).write_text(report, encoding="utf-8")
+        click.echo(f"Report written to {output}")
+    else:
+        click.echo(report)
 
 
 def main() -> None:  # pragma: no cover
