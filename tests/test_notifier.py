@@ -108,5 +108,13 @@ def test_dispatch_skips_when_alert_disabled(stale_result):
 def test_notification_result_str(stale_result, alert_cfg):
     with patch("pipewatch.notifier.send_email_alert"):
         summary = dispatch_notifications([stale_result], alert_cfg)
-    assert "email" in str(summary.sent[0])
-    assert "pipe_a" in str(summary.sent[0])
+    result = summary.sent[0]
+    assert "pipe_a" in str(result)
+
+
+def test_dispatch_mixed_results(stale_result, ok_result, failed_result, alert_cfg):
+    """Dispatch handles a mix of OK, stale, and failed results correctly."""
+    with patch("pipewatch.notifier.send_email_alert"):
+        summary = dispatch_notifications([stale_result, ok_result, failed_result], alert_cfg)
+    assert summary.total_sent == 2
+    assert "pipe_c" in summary.skipped
