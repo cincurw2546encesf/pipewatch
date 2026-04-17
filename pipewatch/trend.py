@@ -21,6 +21,13 @@ class TrendResult:
             return 0.0
         return (self.stale_count + self.failed_count) / self.total
 
+    @property
+    def ok_rate(self) -> float:
+        """Fraction of runs that completed successfully."""
+        if self.total == 0:
+            return 0.0
+        return self.ok_count / self.total
+
 
 def _trend_direction(entries: List[HistoryEntry], window: int = 5) -> str:
     if len(entries) < window * 2:
