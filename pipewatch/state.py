@@ -40,12 +40,19 @@ class StateStore:
     _records: List[RunRecord] = field(default_factory=list, init=False, repr=False)
 
     def load(self) -> None:
+        """Load records from disk. Raises ValueError if the file contains invalid JSON or malformed records."""
         if not self.path.exists():
             self._records = []
             return
-        with self.path.open() as fh:
-            raw = json.load(fh)
-        self._records = [RunRecord(**r) for r in raw]
+        try:
+            with self.path.open() as fh:
+                raw = json.load(fh)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"State file {self.path} contains invalid JSON: {exc}") from exc
+        try:
+            self._records = [RunRecord(**r) for r in raw]
+        except (TypeError, KeyError) as exc:
+            raise ValueError(f"State file {self.path} contains malformed records: {exc}") from exc
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
