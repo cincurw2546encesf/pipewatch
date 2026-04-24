@@ -41,10 +41,15 @@ class RunbookStore:
 
     def _load(self) -> None:
         if self._path.exists():
-            data = json.loads(self._path.read_text())
-            self._entries = {
-                k: RunbookEntry.from_dict(v) for k, v in data.items()
-            }
+            try:
+                data = json.loads(self._path.read_text())
+                self._entries = {
+                    k: RunbookEntry.from_dict(v) for k, v in data.items()
+                }
+            except (json.JSONDecodeError, KeyError) as exc:
+                raise ValueError(
+                    f"Failed to load runbook store from {self._path}: {exc}"
+                ) from exc
 
     def _save(self) -> None:
         self._path.write_text(
