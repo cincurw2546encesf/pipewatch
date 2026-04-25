@@ -77,3 +77,20 @@ def test_analyse_all_returns_one_per_pipeline(store):
     results = analyse_all(["a", "b", "c"], store)
     assert len(results) == 3
     assert {r.pipeline for r in results} == {"a", "b", "c"}
+
+
+def test_analyse_all_empty_pipeline_list(store):
+    """analyse_all with no pipelines should return an empty list."""
+    results = analyse_all([], store)
+    assert results == []
+    store.get.assert_not_called()
+
+
+def test_analyse_trend_all_stale(store):
+    """All-stale history should be reflected in stale_count and failure_rate."""
+    store.get.return_value = [_entry(CheckStatus.STALE.value)] * 10
+    result = analyse_trend("pipe", store)
+    assert result.stale_count == 10
+    assert result.ok_count == 0
+    assert result.failed_count == 0
+    assert result.failure_rate == 1.0
