@@ -92,7 +92,7 @@ def check_pipeline(
     return CheckResult(
         pipeline_name=pipeline.name,
         status=CheckStatus.OK,
-        message=f"Healthy — last run {age_minutes:.1f} min ago.",
+        message=f"Healthy \u2014 last run {age_minutes:.1f} min ago.",
         last_run_at=finished,
         age_minutes=age_minutes,
     )
@@ -104,5 +104,19 @@ def check_all(
     *,
     _now_fn: Optional[Callable] = None,
 ) -> List[CheckResult]:
-    """Run :func:`check_pipeline` for every pipeline in *pipelines*."""
-    return [check_pipeline(p, store, _now_fn=_now_fn) for p in pipelines]
+    """Run :func:`check_pipeline` for every pipeline in *pipelines*.
+
+    Args:
+        pipelines: List of pipeline configurations to check.
+        store: State store used to retrieve the latest run record for each pipeline.
+        _now_fn: Optional callable that returns the current UTC datetime.
+            Intended for testing; defaults to :func:`_utcnow`.
+
+    Returns:
+        A list of :class:`CheckResult` objects, one per pipeline, in the same
+        order as *pipelines*.
+    """
+    return [
+        check_pipeline(p, store, _now_fn=_now_fn)
+        for p in pipelines
+    ]
