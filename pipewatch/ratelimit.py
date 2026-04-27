@@ -33,6 +33,10 @@ class RateLimitEntry:
             check_count=d.get("check_count", 0),
         )
 
+    def seconds_since_last_check(self) -> float:
+        """Return the number of seconds elapsed since this entry was last checked."""
+        return _utcnow() - self.last_checked
+
 
 @dataclass
 class RateLimitStore:
@@ -41,10 +45,14 @@ class RateLimitStore:
 
     def __post_init__(self) -> None:
         if self.path.exists():
-            raw = json.loads(self.path.read_text())
-            self._entries = {
-                k: RateLimitEntry.from_dict(v) for k, v in raw.items()
-            }
+            try:
+                raw = json.loads(self.path.read_text())
+                self._entries = {
+                    k: RateLimitEntry.from_dict(v) for k, v in raw.items()
+                }
+            except (json.JSONDecodeError, KeyError):
+                # If the store file is corrupt or missing required fields, start fresh.
+                self._entries = {}
 
     def _save(self) -> None:
         self.path.write_text(
